@@ -527,7 +527,7 @@ for epoch in range(args.max_epochs):
     val_metrics = net.test(val_loader)
     
     if val_metrics["f1"] > best_f1:
-        logger.info(f"f1 improved, was {best_f1} and now is {val_metrics["f1"]}")
+        logger.info(f"f1 improved, was {best_f1} and now is {val_metrics['f1']}")
         patience_counter = 0
         best_f1 = val_metrics["f1"]
         torch.save(net.state_dict(), os.path.join(args.out_path, "weights.pmt"))
