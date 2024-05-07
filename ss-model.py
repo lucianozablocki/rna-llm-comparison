@@ -11,6 +11,7 @@ import pandas as pd
 import h5py
 import json
 import logging
+import os
 
 # Mapping of nucleotide symbols
 # R	Guanine / Adenine (purine)
@@ -549,9 +550,9 @@ for epoch in range(args.max_epochs):
 
 logger.info("loading model")
 best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
-best_model.load_state_dict(torch.load(weights, map_location=torch.device(best_model.device)))
+best_model.load_state_dict(torch.load(os.path.join(args.out_path, "weights.pmt"), map_location=torch.device(best_model.device)))
 best_model.eval()
 logger.info("running inference")
 predictions = best_model.pred(test_loader)
-predictions.to_csv(os.path.join(args.out_path, args.run_id), index=False)
-logger.info(f"finished run {args.id}!")
+predictions.to_csv(os.path.join(args.out_path, f"{args.run_id}.csv"), index=False)
+logger.info(f"finished run {args.run_id}!")
