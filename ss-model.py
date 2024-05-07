@@ -3,12 +3,40 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torch
+import numpy as np
 from sklearn.metrics import f1_score
 from torch.nn.functional import cross_entropy
 from torch.utils.data import Dataset
 import pandas as pd
 import h5py
 import json
+
+# Mapping of nucleotide symbols
+# R	Guanine / Adenine (purine)
+# Y	Cytosine / Uracil (pyrimidine)
+# K	Guanine / Uracil
+# M	Adenine / Cytosine
+# S	Guanine / Cytosine
+# W	Adenine / Uracil
+# B	Guanine / Uracil / Cytosine
+# D	Guanine / Adenine / Uracil
+# H	Adenine / Cytosine / Uracil
+# V	Guanine / Cytosine / Adenine
+# N	Adenine / Guanine / Cytosine / Uracil
+NT_DICT = {
+    "R": ["G", "A"],
+    "Y": ["C", "U"],
+    "K": ["G", "U"],
+    "M": ["A", "C"],
+    "S": ["G", "C"],
+    "W": ["A", "U"],
+    "B": ["G", "U", "C"],
+    "D": ["G", "A", "U"],
+    "H": ["A", "C", "U"],
+    "V": ["G", "C", "A"],
+    "N": ["G", "A", "C", "U"],
+}
+
 
 def contact_f1(ref_batch, pred_batch, Ls, th=0.5, reduce=True, method="triangular"):
     """Compute F1 from base pairs. Input goes to sigmoid and then thresholded"""
@@ -169,23 +197,76 @@ class SecStructPredictionHead(nn.Module):
         return x.squeeze(-1)
 
     def fit(self, loader):
-      loss_acum = 0
-      f1_acum = 0
-      for batch in loader:
-        X = batch["seq_embs_pad"].to(self.device)
-        y = batch["contacts"].to(self.device)
-        y_pred = self(X)
-        # print(f"y_pred size: {y_pred.shape}") # torch.Size([4, 512, 512])
-        # print(f"y size: {y.shape}") # torch.Size([4, 512, 512])
-        loss = self.loss_func(y_pred, y)
-        loss_acum += loss.item()
-        f1_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="triangular")
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-      loss_acum /= len(loader)
-      f1_acum /= len(loader)
-      return {"loss": loss_acum, "f1": f1_acum}
+        loss_acum = 0
+        f1_acum = 0
+        for batch in loader:
+            X = batch["seq_embs_pad"].to(self.device)
+            y = batch["contacts"].to(self.device)
+            y_pred = self(X)
+            # print(f"y_pred size: {y_pred.shape}") # torch.Size([4, 512, 512])
+            # print(f"y size: {y.shape}") # torch.Size([4, 512, 512])
+            loss = self.loss_func(y_pred, y)
+            loss_acum += loss.item()
+            f1_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="triangular")
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        loss_acum /= len(loader)
+        f1_acum /= len(loader)
+        return {"loss": loss_acum, "f1": f1_acum}
+
+    def test(self, loader):
+        loss_acum = 0
+        f1_acum = 0
+        for batch in loader:
+            X = batch["seq_embs_pad"].to(self.device)
+            y = batch["contacts"].to(self.device)
+            y_pred = self(X)
+            loss = self.loss_func(y_pred, y)
+            loss_acum += loss.item()
+            f1_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="triangular")
+        loss_acum /= len(loader)
+        f1_acum /= len(loader)
+        return {"loss": loss_acum, "f1": f1_acum}
+
+    def pred(self, loader):
+        # self.eval()
+
+        # if self.verbose:
+        #     loader = tqdm(loader)
+
+        predictions = [] 
+        # with tr.no_grad():
+        for batch in loader: 
+            
+            Ls = batch["Ls"]
+            seq_ids = batch["seq_ids"]
+            sequences = batch["sequences"]
+            X = batch["seq_embs_pad"].to(self.device)
+
+            y_pred = self(X)
+            
+            # if isinstance(y_pred, tuple):
+            #     y_pred = y_pred[0]
+
+            y_pred_post = postprocessing(y_pred.cpu(), batch["masks"])
+            for k in range(len(y_pred_post)):
+                # if logits:
+                #     logits_list.append(
+                #         (seqid[k],
+                #             y_pred[k, : lengths[k], : lengths[k]].squeeze().cpu(),
+                #             y_pred_post[k, : lengths[k], : lengths[k]].squeeze()
+                #         ))
+                predictions.append((
+                    seq_ids[k],
+                    sequences[k],
+                    mat2bp(
+                        y_pred_post[k, : Ls[k], : Ls[k]].squeeze()
+                    )                         
+                ))
+        predictions = pd.DataFrame(predictions, columns=["id", "sequence", "base_pairs"])
+
+        return predictions
 
 def bp2matrix(L, base_pairs):
     matrix = torch.zeros((L, L))
@@ -196,6 +277,52 @@ def bp2matrix(L, base_pairs):
         matrix[bp[1] - 1, bp[0] - 1] = 1
 
     return matrix
+
+def mat2bp(x):
+    """Get base-pairs from conection matrix [N, N]. It uses upper
+    triangular matrix only, without the diagonal. Positions are 1-based. """
+    ind = torch.triu_indices(x.shape[0], x.shape[1], offset=1)
+    pairs_ind = torch.where(x[ind[0], ind[1]] > 0)[0]
+
+    pairs_ind = ind[:, pairs_ind].T
+    # remove multiplets pairs
+    multiplets = []
+    for i, j in pairs_ind:
+        ind = torch.where(pairs_ind[:, 1]==i)[0]
+        if len(ind)>0:
+            pairs = [bp.tolist() for bp in pairs_ind[ind]] + [[i.item(), j.item()]]
+            best_pair = torch.tensor([x[bp[0], bp[1]] for bp in pairs]).argmax()
+                
+            multiplets += [pairs[k] for k in range(len(pairs)) if k!=best_pair]   
+            
+    pairs_ind = [[bp[0]+1, bp[1]+1] for bp in pairs_ind.tolist() if bp not in multiplets]
+ 
+    return pairs_ind
+
+def postprocessing(preds, masks):
+    """Postprocessing function using viable pairing mask.
+    Inputs are batches of size [B, N, N]"""
+    if masks is not None:
+        preds = preds.multiply(masks)
+
+    y_pred_mask_triu = torch.triu(preds)
+    y_pred_mask_max = torch.zeros_like(preds)
+    for k in range(preds.shape[0]):
+        y_pred_mask_max_aux = torch.zeros_like(y_pred_mask_triu[k, :, :])
+
+        val, ind = y_pred_mask_triu[k, :, :].max(dim=0)
+        y_pred_mask_max[k, ind[val > 0], val > 0] = val[val > 0]
+
+        val, ind = y_pred_mask_max[k, :, :].max(dim=1)
+        y_pred_mask_max_aux[val > 0, ind[val > 0]] = val[val > 0]
+
+        ind = torch.where(y_pred_mask_max[k, :, :] != y_pred_mask_max_aux)
+        y_pred_mask_max[k, ind[0], ind[1]] = 0
+
+        y_pred_mask_max[k] = torch.triu(y_pred_mask_max[k]) + torch.triu(
+            y_pred_mask_max[k]
+        ).transpose(0, 1)
+    return y_pred_mask_max
 
 class EmbeddingDataset(Dataset):
     def __init__(
@@ -269,30 +396,71 @@ class EmbeddingDataset(Dataset):
         #     print(f"{seq_id} too long: len {L} bigger than max L {self.max_len}")
         #     raise
         Mc = bp2matrix(L, self.base_pairs[idx])
-
-        return {"seq_id": seq_id, "seq_emb": seq_emb, "contact": Mc, "L": L} # seq_id, seq_emb, Mc, L
+        mask = valid_mask(sequence, L)
+        return {"seq_id": seq_id, "seq_emb": seq_emb, "contact": Mc, "L": L, "sequence": sequence, "mask": mask} # seq_id, seq_emb, Mc, L
 
 def pad_batch(batch):
-    """batch is a list of (seqid, seq_emb, Mc, L)"""
-    seq_ids, seq_embs, Mcs, Ls = [[batch_elem[key] for batch_elem in batch] for key in batch[0].keys()]
+    """batch is a list of dicts with keys: seqid, seq_emb, Mc, L, sequence, mask"""
+    seq_ids, seq_embs, Mcs, Ls, sequences, masks = [[batch_elem[key] for batch_elem in batch] for key in batch[0].keys()]
+    # should embedding_dim be computed for every batch?
     embedding_dim = seq_embs[0].shape[1] # seq_embs is a list of tensors of size L x d
     batch_size = len(batch)
     max_L = max(Ls)
     seq_embs_pad = torch.zeros(batch_size, max_L, embedding_dim)
     # cross entropy loss can ignore the -1s
     Mcs_pad = -torch.ones((batch_size, max_L, max_L), dtype=torch.long)
+    masks_pad = torch.zeros((batch_size, max_L, max_L))
     for k in range(batch_size):
         seq_embs_pad[k, : Ls[k], :] = seq_embs[k]
         Mcs_pad[k, : Ls[k], : Ls[k]] = Mcs[k]
-    return {"seq_ids": seq_ids, "seq_embs_pad": seq_embs_pad, "contacts": Mcs_pad, "Ls": Ls} # seq_ids, seq_embs_pad, Mcs, Ls
+        masks_pad[k, : Ls[k], : Ls[k]] = masks[k]
+    return {"seq_ids": seq_ids, "seq_embs_pad": seq_embs_pad, "contacts": Mcs_pad, "Ls": Ls, "sequences": sequences, "masks": masks_pad} # seq_ids, seq_embs_pad, Mcs, Ls
+
+def pair_strength(pair):
+    if "G" in pair and "C" in pair:
+        return 3
+    if "A" in pair and "U" in pair:
+        return 2
+    if "G" in pair and "U" in pair:
+        return 0.8
+
+    if pair[0] in NT_DICT and pair[1] in NT_DICT:
+        n0, n1 = NT_DICT[pair[0]], NT_DICT[pair[1]]
+        # Possible pairs with other bases
+        if ("G" in n0 and "C" in n1) or ("C" in n0 and "G" in n1):
+            return 3
+        if ("A" in n0 and "U" in n1) or ("U" in n0 and "A" in n1):
+            return 2
+        if ("G" in n0 and "U" in n1) or ("U" in n0 and "G" in n1):
+            return 0.8
+
+    return 0
+
+def valid_mask(seq, L):
+    """Create a NxN mask with valid canonic pairings."""
+
+    seq = seq.upper().replace("T", "U")  # rna
+    mask = torch.zeros(L, L, dtype=torch.float32)
+    for i in range(len(seq)):
+        for j in range(len(seq)):
+            if np.abs(i - j) > 3:  # nt that are too close are invalid
+                if pair_strength([seq[i], seq[j]]) > 0:
+                    mask[i, j] = 1
+                    mask[j, i] = 1
+    return mask
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--embeddings_path", default='../ERNIE-RNA/data/all_repr_ERNIE-RNA.h5', type=str, help="The path of the representations.")
+parser.add_argument("--device", default='cuda:0', type=str, help="Pytorch device to use (cpu or cuda)")
+parser.add_argument("--embeddings_path", default='data/all_repr_ERNIE-RNA.h5', type=str, help="The path of the representations.")
 parser.add_argument("--train_partition_path", default='./data/famfold-data/train-partition-0.csv', type=str, help="The path of the train partition.")
+parser.add_argument("--val_partition_path", default='./data/famfold-data/valid-partition-0.csv', type=str, help="The path of the validation partition.")
+parser.add_argument("--test_partition_path", default='./data/famfold-data/test-partition-0.csv', type=str, help="The path of the test partition.")
 parser.add_argument("--batch_size", default=4, type=int, help="Batch size to use in forward pass.")
-parser.add_argument("--shuffle", default=False, type=bool, help="Wheter to shuffle the data upon Dataloder creation.")
+parser.add_argument("--shuffle", default=False, type=bool, help="Whether to shuffle the data upon Dataloder creation.")
 parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
+parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
+parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions file (containing base pairs of test partition)")
 
 args = parser.parse_args()
 
@@ -301,11 +469,15 @@ train_dataset = EmbeddingDataset(
   dataset_path=args.train_partition_path,
 )
 
-# ToDo
-# val_dataset = EmbeddingDataset(
-#   embeddings_path=f"{my_drive_path}/all_repr_ERNIE-RNA.h5",
-#   partition_path=f"{root_path}/{val_partition_path}",
-# )
+val_dataset = EmbeddingDataset(
+  embeddings_path=args.embeddings_path,
+  dataset_path=args.val_partition_path,
+)
+
+test_dataset = EmbeddingDataset(
+  embeddings_path=args.embeddings_path,
+  dataset_path=args.test_partition_path,
+)
 
 train_loader = torch.utils.data.DataLoader(
     train_dataset,
@@ -314,27 +486,48 @@ train_loader = torch.utils.data.DataLoader(
     collate_fn=pad_batch,
 )
 
-# ToDo
-# val_loader = torch.utils.data.DataLoader(
-#     val_dataset,
-#     batch_size=batch_size,
-#     shuffle=shuffle,
-#     collate_fn=pad_batch,
-# )
+val_loader = torch.utils.data.DataLoader(
+    val_dataset,
+    batch_size=args.batch_size,
+    shuffle=args.shuffle,
+    collate_fn=pad_batch,
+)
 
-# grab an element from the loader (a batch)
+test_loader = torch.utils.data.DataLoader(
+    test_dataset,
+    batch_size=args.batch_size,
+    shuffle=args.shuffle,
+    collate_fn=pad_batch,
+)
+
+# grab an element from the loader, which is represented by a dictionary with keys
+# `seq_ids`, `seq_embs_pad`, `contacts`, `Ls`
 batch_elem = next(iter(train_loader))
 # query for `seq_embs_pad` key (containing the embedding representations of all the sequences in the batch)
 # whose size will be batch_size x L x d
 embed_dim = batch_elem["seq_embs_pad"].shape[2]
-net = SecStructPredictionHead(embed_dim=embed_dim,device='cuda:0')
+net = SecStructPredictionHead(embed_dim=embed_dim,device=args.device)
+best_f1 = -1
+patience_counter = 0
 for epoch in range(args.max_epochs):
-  train_metrics = net.fit(train_loader)
-  # val_metrics = net.test(val_loader)
-  msg = (
-    f"epoch {epoch}:"
-    + " ".join([f"train_{k} {v:.3f}" for k, v in train_metrics.items()])
-    # + " "
-    # + " ".join([f"val_{k} {v:.3f}" for k, v in val_metrics.items()])
-  )
-  print(msg)
+    train_metrics = net.fit(train_loader)
+    val_metrics = net.test(val_loader)
+    
+    if val_metrics["f1"] > best_f1:
+        patience_counter = 0
+        best_f1 = val_metrics["f1"]
+    else:
+        patience_counter+=1
+        if patience_counter>args.patience:
+            print("exiting training loop, patience was reached")
+            break
+    msg = (
+        f"epoch {epoch}:"
+        + " ".join([f"train_{k} {v:.3f}" for k, v in train_metrics.items()])
+        + " "
+        + " ".join([f"val_{k} {v:.3f}" for k, v in val_metrics.items()])
+    )
+    print(msg)
+
+predictions = net.pred(test_loader)
+predictions.to_csv(args.out_path, index=False)
