@@ -462,6 +462,7 @@ parser.add_argument("--shuffle", default=False, type=bool, help="Whether to shuf
 parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
 parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
 parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions file (containing base pairs of test partition)")
+parser.add_argument("--run_id", default="no-id", type=int, help="Run identifier")
 
 args = parser.parse_args()
 
