@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 import pandas as pd
 import h5py
 import json
+import logging
 
 # Mapping of nucleotide symbols
 # R	Guanine / Adenine (purine)
@@ -464,6 +465,16 @@ parser.add_argument("--out_path", default=10, type=str, help="Path to write pred
 
 args = parser.parse_args()
 
+logging.basicConfig(
+    level=logging.DEBUG,  # Set the minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format='%(asctime)s - %(name)s.%(lineno)d - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Log to console
+        logging.FileHandler(os.path.join(args.out_path, f'log-{args.run_id}.txt'), mode='w'),
+    ]
+)
+logger = logging.getLogger(__name__)
+
 train_dataset = EmbeddingDataset(
   embeddings_path=args.embeddings_path,
   dataset_path=args.train_partition_path,
@@ -510,16 +521,21 @@ net = SecStructPredictionHead(embed_dim=embed_dim,device=args.device)
 best_f1 = -1
 patience_counter = 0
 for epoch in range(args.max_epochs):
+    logger.info(f"starting epoch {epoch}")
     train_metrics = net.fit(train_loader)
     val_metrics = net.test(val_loader)
     
     if val_metrics["f1"] > best_f1:
+        logger.info(f"f1 improved, was {best_f1} and now is {val_metrics["f1"]}")
         patience_counter = 0
         best_f1 = val_metrics["f1"]
+        torch.save(net.state_dict(), os.path.join(args.out_path, "weights.pmt"))
+        logger.info(f"model saved at epoch {epoch}")
     else:
+        logger.info(f"f1 has not improved, increasing patience counter")
         patience_counter+=1
         if patience_counter>args.patience:
-            print("exiting training loop, patience was reached")
+            logger.info("exiting training loop, patience was reached")
             break
     msg = (
         f"epoch {epoch}:"
@@ -527,7 +543,14 @@ for epoch in range(args.max_epochs):
         + " "
         + " ".join([f"val_{k} {v:.3f}" for k, v in val_metrics.items()])
     )
+    logger.info(msg)
     print(msg)
 
-predictions = net.pred(test_loader)
-predictions.to_csv(args.out_path, index=False)
+logger.info("loading model")
+best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
+best_model.load_state_dict(torch.load(weights, map_location=torch.device(best_model.device)))
+best_model.eval()
+logger.info("running inference")
+predictions = best_model.pred(test_loader)
+predictions.to_csv(os.path.join(args.out_path, args.run_id), index=False)
+logger.info(f"finished run {args.id}!")
