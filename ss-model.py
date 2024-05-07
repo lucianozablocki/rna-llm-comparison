@@ -250,9 +250,7 @@ class SecStructPredictionHead(nn.Module):
             #     y_pred = y_pred[0]
 
             y_pred_post = postprocessing(y_pred.cpu(), batch["masks"])
-            print(y_pred_post.shape)
-            print(len(y_pred_post))
-            for k in range(y_pred_post.shape[0]):
+            for k in range(len(y_pred_post)):
                 # if logits:
                 #     logits_list.append(
                 #         (seqid[k],
