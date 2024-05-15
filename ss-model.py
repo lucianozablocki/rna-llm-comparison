@@ -459,10 +459,9 @@ parser.add_argument("--train_partition_path", default='./data/famfold-data/train
 parser.add_argument("--val_partition_path", default='./data/famfold-data/valid-partition-0.csv', type=str, help="The path of the validation partition.")
 parser.add_argument("--test_partition_path", default='./data/famfold-data/test-partition-0.csv', type=str, help="The path of the test partition.")
 parser.add_argument("--batch_size", default=4, type=int, help="Batch size to use in forward pass.")
-parser.add_argument("--shuffle", default=False, type=bool, help="Whether to shuffle the data upon Dataloder creation.")
 parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
 parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
-parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions file (containing base pairs of test partition)")
+parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions (base pairs of test partition), weights and logs")
 parser.add_argument("--run_id", default="no-id", type=int, help="Run identifier")
 
 args = parser.parse_args()
@@ -495,21 +494,21 @@ test_dataset = EmbeddingDataset(
 train_loader = torch.utils.data.DataLoader(
     train_dataset,
     batch_size=args.batch_size,
-    shuffle=args.shuffle,
+    shuffle=True,
     collate_fn=pad_batch,
 )
 
 val_loader = torch.utils.data.DataLoader(
     val_dataset,
     batch_size=args.batch_size,
-    shuffle=args.shuffle,
+    shuffle=False,
     collate_fn=pad_batch,
 )
 
 test_loader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=args.batch_size,
-    shuffle=args.shuffle,
+    shuffle=False,
     collate_fn=pad_batch,
 )
 
@@ -527,11 +526,14 @@ for epoch in range(args.max_epochs):
     train_metrics = net.fit(train_loader)
     val_metrics = net.test(val_loader)
     
+    if epoch % 10 == 0:
+        torch.save(net.state_dict(), os.path.join(args.out_path, f"weights{args.run_id}-epoch{epoch}.pmt"))
+        logger.info(f"model saved at epoch {epoch}")
     if val_metrics["f1"] > best_f1:
         logger.info(f"f1 improved, was {best_f1} and now is {val_metrics['f1']}")
         patience_counter = 0
         best_f1 = val_metrics["f1"]
-        torch.save(net.state_dict(), os.path.join(args.out_path, "weights.pmt"))
+        torch.save(net.state_dict(), os.path.join(args.out_path, f"weights{args.run_id}-best.pmt"))
         logger.info(f"model saved at epoch {epoch}")
     else:
         logger.info(f"f1 has not improved, increasing patience counter")
@@ -546,11 +548,10 @@ for epoch in range(args.max_epochs):
         + " ".join([f"val_{k} {v:.3f}" for k, v in val_metrics.items()])
     )
     logger.info(msg)
-    print(msg)
 
 logger.info("loading model")
 best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
-best_model.load_state_dict(torch.load(os.path.join(args.out_path, "weights.pmt"), map_location=torch.device(best_model.device)))
+best_model.load_state_dict(torch.load(os.path.join(args.out_path, f"weights{args.run_id}-best.pmt"), map_location=torch.device(best_model.device)))
 best_model.eval()
 logger.info("running inference")
 predictions = best_model.pred(test_loader)
