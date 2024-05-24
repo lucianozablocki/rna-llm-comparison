@@ -2,11 +2,11 @@ import argparse
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import torch
 import numpy as np
 from sklearn.metrics import f1_score
 from torch.nn.functional import cross_entropy
 from torch.utils.data import Dataset
-from torch.optim.lr_scheduler import LinearLR
 import pandas as pd
 import h5py
 import json
@@ -139,6 +139,7 @@ class SecStructPredictionHead(nn.Module):
     def __init__(self, embed_dim, num_blocks=2, conv_dim=64, kernel_size=3, negative_weight=0.1, device='cpu', lr=1e-5):
         super().__init__()
         self.lr = lr
+        # self.loss = nn.BCEWithLogitsLoss()
         self.threshold = 0.5
         self.linear_in = nn.Linear(embed_dim * 2, conv_dim)
         self.resnet = ResNet2D(conv_dim, num_blocks, kernel_size)
@@ -146,8 +147,6 @@ class SecStructPredictionHead(nn.Module):
         self.device = device
         self.class_weight = torch.tensor([negative_weight, 1.0]).float().to(self.device)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        self.lr_scheduler = LinearLR(self.optimizer, start_factor=1.0, end_factor=0.1, total_iters=15)
-
         self.to(device)
 
     def loss_func(self, yhat, y):
@@ -186,7 +185,7 @@ class SecStructPredictionHead(nn.Module):
         # print(f"after ellipsis: {x.shape}") batch_size x L-2 x d
         x = _outer_concat(x, x) # B x L x F => B x L x L x 2F
 
-        x = self.linear_in(x)
+        x = self.linear_in(x)   
         x = x.permute(0, 3, 1, 2) # B x L x L x E  => B x E x L x L
 
         x = self.resnet(x)
@@ -214,7 +213,6 @@ class SecStructPredictionHead(nn.Module):
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-        self.lr_scheduler.step()
         loss_acum /= len(loader)
         f1_acum /= len(loader)
         return {"loss": loss_acum, "f1": f1_acum}
@@ -457,14 +455,13 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--device", default='cuda:0', type=str, help="Pytorch device to use (cpu or cuda)")
 parser.add_argument("--embeddings_path", default='data/all_repr_ERNIE-RNA.h5', type=str, help="The path of the representations.")
-parser.add_argument("--train_partition_path", default='./data/famfold-data/train-partition-0.csv', type=str, help="The path of the train partition.")
-parser.add_argument("--val_partition_path", default='./data/famfold-data/valid-partition-0.csv', type=str, help="The path of the validation partition.")
+# parser.add_argument("--train_partition_path", default='./data/famfold-data/train-partition-0.csv', type=str, help="The path of the train partition.")
+# parser.add_argument("--val_partition_path", default='./data/famfold-data/valid-partition-0.csv', type=str, help="The path of the validation partition.")
 parser.add_argument("--test_partition_path", default='./data/famfold-data/test-partition-0.csv', type=str, help="The path of the test partition.")
-parser.add_argument("--batch_size", default=4, type=int, help="Batch size to use in forward pass.")
-parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
-parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
-parser.add_argument("--lr", default=1e-5, type=float, help="Learning rate for the training.")
-parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions (base pairs of test partition), weights and logs")
+# parser.add_argument("--batch_size", default=4, type=int, help="Batch size to use in forward pass.")
+# parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
+# parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
+parser.add_argument("--out_path", default="./results", type=str, help="Path to write predictions (base pairs of test partition), weights and logs")
 parser.add_argument("--run_id", default="no-id", type=int, help="Run identifier")
 
 args = parser.parse_args()
@@ -479,84 +476,143 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-train_dataset = EmbeddingDataset(
-  embeddings_path=args.embeddings_path,
-  dataset_path=args.train_partition_path,
-)
-
-val_dataset = EmbeddingDataset(
-  embeddings_path=args.embeddings_path,
-  dataset_path=args.val_partition_path,
-)
 
 test_dataset = EmbeddingDataset(
   embeddings_path=args.embeddings_path,
   dataset_path=args.test_partition_path,
 )
 
-train_loader = torch.utils.data.DataLoader(
-    train_dataset,
-    batch_size=args.batch_size,
-    shuffle=True,
-    collate_fn=pad_batch,
-)
-
-val_loader = torch.utils.data.DataLoader(
-    val_dataset,
-    batch_size=args.batch_size,
-    shuffle=False,
-    collate_fn=pad_batch,
-)
 
 test_loader = torch.utils.data.DataLoader(
     test_dataset,
-    batch_size=args.batch_size,
+    batch_size=2,
     shuffle=False,
     collate_fn=pad_batch,
 )
 
 # grab an element from the loader, which is represented by a dictionary with keys
 # `seq_ids`, `seq_embs_pad`, `contacts`, `Ls`
-batch_elem = next(iter(train_loader))
+batch_elem = next(iter(test_loader))
 # query for `seq_embs_pad` key (containing the embedding representations of all the sequences in the batch)
 # whose size will be batch_size x L x d
 embed_dim = batch_elem["seq_embs_pad"].shape[2]
-net = SecStructPredictionHead(embed_dim=embed_dim,device=args.device,lr=args.lr)
-best_f1 = -1
-patience_counter = 0
-for epoch in range(args.max_epochs):
-    logger.info(f"starting epoch {epoch}")
-    train_metrics = net.fit(train_loader)
-    val_metrics = net.test(val_loader)
-    
-    if epoch % 10 == 0:
-        torch.save(net.state_dict(), os.path.join(args.out_path, f"weights{args.run_id}-epoch{epoch}.pmt"))
-        logger.info(f"model saved at epoch {epoch}")
-    if val_metrics["f1"] > best_f1:
-        logger.info(f"f1 improved, was {best_f1} and now is {val_metrics['f1']}")
-        patience_counter = 0
-        best_f1 = val_metrics["f1"]
-        torch.save(net.state_dict(), os.path.join(args.out_path, f"weights{args.run_id}-best.pmt"))
-        logger.info(f"model saved at epoch {epoch}")
-    else:
-        logger.info(f"f1 has not improved, increasing patience counter")
-        patience_counter+=1
-        if patience_counter>args.patience:
-            logger.info("exiting training loop, patience was reached")
-            break
-    msg = (
-        f"epoch {epoch}:"
-        + " ".join([f"train_{k} {v:.3f}" for k, v in train_metrics.items()])
-        + " "
-        + " ".join([f"val_{k} {v:.3f}" for k, v in val_metrics.items()])
-    )
-    logger.info(msg)
+data = pd.read_csv(args.test_partition_path, index_col="id")
 
-logger.info("loading model")
+def f1_strict(ref_bp, pre_bp):
+    """F1 score strict, same as triangular but less efficient"""
+    # corner case when there are no positives
+    if len(ref_bp) == 0 and len(pre_bp) == 0:
+        return 1.0, 1.0, 1.0
+
+    tp1 = 0
+    for rbp in ref_bp:
+        if rbp in pre_bp:
+            tp1 = tp1 + 1
+    tp2 = 0
+    for pbp in pre_bp:
+        if pbp in ref_bp:
+            tp2 = tp2 + 1
+
+    fn = len(ref_bp) - tp1
+    fp = len(pre_bp) - tp1
+
+    tpr = pre = f1 = 0.0
+    if tp1 + fn > 0:
+        tpr = tp1 / float(tp1 + fn)  # sensitivity (=recall =power)
+    if tp1 + fp > 0:
+        pre = tp2 / float(tp1 + fp)  # precision (=ppv)
+    if tpr + pre > 0:
+        f1 = 2 * pre * tpr / (pre + tpr)  # F1 score
+
+    return tpr, pre, f1
+
+def f1_shift(ref_bp, pre_bp):
+    """F1 score with tolerance of 1 position"""
+    # corner case when there are no positives
+    if len(ref_bp) == 0 and len(pre_bp) == 0:
+        return 1.0, 1.0, 1.0
+
+    tp1 = 0
+    for rbp in ref_bp:
+        if (
+            rbp in pre_bp
+            or [rbp[0], rbp[1] - 1] in pre_bp
+            or [rbp[0], rbp[1] + 1] in pre_bp
+            or [rbp[0] + 1, rbp[1]] in pre_bp
+            or [rbp[0] - 1, rbp[1]] in pre_bp
+        ):
+            tp1 = tp1 + 1
+    tp2 = 0
+    for pbp in pre_bp:
+        if (
+            pbp in ref_bp
+            or [pbp[0], pbp[1] - 1] in ref_bp
+            or [pbp[0], pbp[1] + 1] in ref_bp
+            or [pbp[0] + 1, pbp[1]] in ref_bp
+            or [pbp[0] - 1, pbp[1]] in ref_bp
+        ):
+            tp2 = tp2 + 1
+
+    fn = len(ref_bp) - tp1
+    fp = len(pre_bp) - tp1
+
+    tpr = pre = f1 = 0.0
+    if tp1 + fn > 0:
+        tpr = tp1 / float(tp1 + fn)  # sensitivity (=recall =power)
+    if tp1 + fp > 0:
+        pre = tp2 / float(tp1 + fp)  # precision (=ppv)
+    if tpr + pre > 0:
+        f1 = 2 * pre * tpr / (pre + tpr)  # F1 score
+
+    return tpr, pre, f1
+
+# # a = zip(*[batch for batch in test_loader])
+# data = []
+# for batch in test_loader:
+#     data.extend(batch)
+# print(data[0])
+# data = [mat2bp(e["contacts"]) for e in data]
+# # print(type(a))s
+import ast
+
+for i in range(2):
+    f1_acum=0
+    logger.info(f"loading model for epoch {i*10}")
+    best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
+    best_model.load_state_dict(torch.load(os.path.join(args.out_path, f"weights{args.run_id}-epoch{i*10}.pmt"), map_location=torch.device(best_model.device)))
+    best_model.eval()
+    logger.info("running inference")
+    predictions = best_model.pred(test_loader)
+    predictions = predictions.set_index("id")
+    # print(predictions.index)
+    # print(predictions["base_pairs"].tolist())
+    # print(type(predictions["base_pairs"]))
+    # print(predictions.)
+    for seq_id in predictions.index:
+        # print(seq_id)
+        prediction = predictions.loc[seq_id]["base_pairs"]
+        ref = ast.literal_eval(data.loc[seq_id]["base_pairs"])
+        # print(type(prediction))
+        # print(type(ref))
+        _, _, f1 = f1_shift(ref, prediction)
+        f1_acum+=f1
+    f1_acum/=len(predictions)
+    logger.info(f"f1 for epoch {i*10} is {f1_acum}")
+    # predictions.to_csv(os.path.join(args.out_path, f"{args.run_id}.csv"), index=False)
+    # logger.info(f"finished run {args.run_id}!")
+
+f1_acum=0
+logger.info(f"loading model for best epoch")
 best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
 best_model.load_state_dict(torch.load(os.path.join(args.out_path, f"weights{args.run_id}-best.pmt"), map_location=torch.device(best_model.device)))
 best_model.eval()
 logger.info("running inference")
 predictions = best_model.pred(test_loader)
-predictions.to_csv(os.path.join(args.out_path, f"{args.run_id}.csv"), index=False)
-logger.info(f"finished run {args.run_id}!")
+predictions = predictions.set_index("id")
+for seq_id in predictions.index:
+    prediction = predictions.loc[seq_id]["base_pairs"]
+    ref = ast.literal_eval(data.loc[seq_id]["base_pairs"])
+    _, _, f1 = f1_shift(ref, prediction)
+    f1_acum+=f1
+f1_acum/=len(predictions)
+logger.info(f"f1 for best epoch is {f1_acum}")
