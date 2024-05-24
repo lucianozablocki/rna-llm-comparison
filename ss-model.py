@@ -139,7 +139,6 @@ class SecStructPredictionHead(nn.Module):
     def __init__(self, embed_dim, num_blocks=2, conv_dim=64, kernel_size=3, negative_weight=0.1, device='cpu', lr=1e-5):
         super().__init__()
         self.lr = lr
-        # self.loss = nn.BCEWithLogitsLoss()
         self.threshold = 0.5
         self.linear_in = nn.Linear(embed_dim * 2, conv_dim)
         self.resnet = ResNet2D(conv_dim, num_blocks, kernel_size)
@@ -147,7 +146,7 @@ class SecStructPredictionHead(nn.Module):
         self.device = device
         self.class_weight = torch.tensor([negative_weight, 1.0]).float().to(self.device)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        self.lr_scheduler = LinearLR(self.optimizer, start_factor=1.0, end_factor=0.1, total_iters=7500) # TODO: Hardcoded
+        self.lr_scheduler = LinearLR(self.optimizer, start_factor=1.0, end_factor=0.1, total_iters=15)
 
         self.to(device)
 
@@ -464,6 +463,7 @@ parser.add_argument("--test_partition_path", default='./data/famfold-data/test-p
 parser.add_argument("--batch_size", default=4, type=int, help="Batch size to use in forward pass.")
 parser.add_argument("--max_epochs", default=10, type=int, help="Maximum number of training epochs.")
 parser.add_argument("--patience", default=10, type=int, help="Epochs to wait before quiting training because of validation f1 not improving.")
+parser.add_argument("--lr", default=1e-5, type=float, help="Learning rate for the training.")
 parser.add_argument("--out_path", default=10, type=str, help="Path to write predictions (base pairs of test partition), weights and logs")
 parser.add_argument("--run_id", default="no-id", type=int, help="Run identifier")
 
@@ -521,7 +521,7 @@ batch_elem = next(iter(train_loader))
 # query for `seq_embs_pad` key (containing the embedding representations of all the sequences in the batch)
 # whose size will be batch_size x L x d
 embed_dim = batch_elem["seq_embs_pad"].shape[2]
-net = SecStructPredictionHead(embed_dim=embed_dim,device=args.device)
+net = SecStructPredictionHead(embed_dim=embed_dim,device=args.device,lr=args.lr)
 best_f1 = -1
 patience_counter = 0
 for epoch in range(args.max_epochs):

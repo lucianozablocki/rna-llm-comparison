@@ -575,7 +575,7 @@ def f1_shift(ref_bp, pre_bp):
 # # print(type(a))s
 import ast
 
-for i in range(12):
+for i in range(2):
     f1_acum=0
     logger.info(f"loading model for epoch {i*10}")
     best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
@@ -600,3 +600,19 @@ for i in range(12):
     logger.info(f"f1 for epoch {i*10} is {f1_acum}")
     # predictions.to_csv(os.path.join(args.out_path, f"{args.run_id}.csv"), index=False)
     # logger.info(f"finished run {args.run_id}!")
+
+f1_acum=0
+logger.info(f"loading model for best epoch")
+best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
+best_model.load_state_dict(torch.load(os.path.join(args.out_path, f"weights{args.run_id}-best.pmt"), map_location=torch.device(best_model.device)))
+best_model.eval()
+logger.info("running inference")
+predictions = best_model.pred(test_loader)
+predictions = predictions.set_index("id")
+for seq_id in predictions.index:
+    prediction = predictions.loc[seq_id]["base_pairs"]
+    ref = ast.literal_eval(data.loc[seq_id]["base_pairs"])
+    _, _, f1 = f1_shift(ref, prediction)
+    f1_acum+=f1
+f1_acum/=len(predictions)
+logger.info(f"f1 for best epoch is {f1_acum}")
