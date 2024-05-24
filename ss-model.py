@@ -223,9 +223,10 @@ class SecStructPredictionHead(nn.Module):
                 # print(f"optimizing, batch count is {batch_count}")
                 self.optimizer.step()
                 batch_count=0
-            # else:
-            #     print("not calling optimizer step")
-            batch_count+=1
+            else:
+                batch_count+=1
+                # print("not calling optimizer step")
+                # print(batch_count)
         self.lr_scheduler.step()
         loss_acum /= len(loader)
         f1_acum /= len(loader)
