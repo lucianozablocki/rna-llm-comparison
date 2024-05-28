@@ -46,7 +46,7 @@ class EmbeddingDataset(Dataset):
             print(f"{seq_id} not present")
             raise
         seq_emb = self.embeddings[seq_id]
-        L = seq_emb.shape[0] # embedding has size max_L x d
+        L = len(sequence) 
 
         Mc = bp2matrix(L, self.base_pairs[idx])
         return {"seq_id": seq_id, "seq_emb": seq_emb, "contact": Mc, "L": L, "sequence": sequence} 
@@ -62,7 +62,7 @@ def pad_batch(batch):
     # cross entropy loss can ignore the -1s
     Mcs_pad = -torch.ones((batch_size, max_L, max_L), dtype=torch.long)
     for k in range(batch_size):
-        seq_embs_pad[k, : Ls[k], :] = seq_embs[k]
+        seq_embs_pad[k, : Ls[k], :] = seq_embs[k][:Ls[k], :]
         Mcs_pad[k, : Ls[k], : Ls[k]] = Mcs[k]
     return {"seq_ids": seq_ids, "seq_embs_pad": seq_embs_pad, "contacts": Mcs_pad, "Ls": Ls, "sequences": sequences}
 

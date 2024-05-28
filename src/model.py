@@ -3,8 +3,8 @@ import torch
 from torch.nn.functional import cross_entropy
 from torch.optim.lr_scheduler import LinearLR
 import pandas as pd
-from src.metrics import contact_f1
-from src.utils import mat2bp, postprocessing, outer_concat
+from src.metrics import contact_f1, f1_shift
+from src.utils import mat2bp, prob_mat_to_sec_struct, outer_concat
 from tqdm import tqdm
 
 class ResNet2DBlock(nn.Module):
@@ -66,37 +66,17 @@ class SecStructPredictionHead(nn.Module):
     def loss_func(self, yhat, y):
         """yhat and y are [N, M, M]"""
         y = y.view(y.shape[0], -1)
-        # yhat, y0 = yhat  # yhat is the final ouput and y0 is the cnn output
-
+        
         yhat = yhat.view(yhat.shape[0], -1)
-        # y0 = y0.view(y0.shape[0], -1)
-
-        # # Add l1 loss, ignoring the padding
-        # l1_loss = tr.mean(tr.relu(yhat[y != -1]))
-
-        # yhat has to be shape [N, 2, L].
+        
         yhat = yhat.unsqueeze(1)
-        # yhat will have high positive values for base paired and high negative values for unpaired
         yhat = torch.cat((-yhat, yhat), dim=1)
 
-        # y0 = y0.unsqueeze(1)
-        # y0 = tr.cat((-y0, y0), dim=1)
-        # error_loss1 = cross_entropy(y0, y, ignore_index=-1, weight=self.class_weight)
+        loss = cross_entropy(yhat, y, ignore_index=-1, weight=self.class_weight)
 
-        error_loss = cross_entropy(yhat, y, ignore_index=-1, weight=self.class_weight)
-
-
-        loss = (
-            error_loss
-            # + self.loss_beta * error_loss1
-            # + self.loss_l1 * l1_loss
-        )
         return loss
 
     def forward(self, x):
-        # print(f"before ellipsis: {x.shape}") batch_size x L x d
-        # x = x[..., 1:-1, :] # this line was commented out, we want to use embeddings as they come from the LLM
-        # print(f"after ellipsis: {x.shape}") batch_size x L-2 x d
         x = outer_concat(x, x) # B x L x F => B x L x L x 2F
 
         x = self.linear_in(x)
@@ -136,7 +116,7 @@ class SecStructPredictionHead(nn.Module):
     def test(self, loader):
         self.eval()
         loss_acum = 0
-        f1_acum, f1_shift_acum = 0, 0
+        f1_acum, f1_shift_acum, f1_postproc_rinalmo = 0, 0, 0
         for batch in loader:
             X = batch["seq_embs_pad"].to(self.device)
             y = batch["contacts"].to(self.device)
@@ -144,12 +124,24 @@ class SecStructPredictionHead(nn.Module):
                 y_pred = self(X)
                 loss = self.loss_func(y_pred, y)
             loss_acum += loss.item()
+
+            for i in range(y_pred.shape[0]):
+                L = batch["Ls"][i]
+                out = prob_mat_to_sec_struct(probs=y_pred[i,:L,:L].cpu().numpy(), seq=batch["sequences"][i], threshold=self.threshold)
+                ref_bp = mat2bp(y[i, :L, :L].cpu())
+                pred_bp = mat2bp(torch.tensor(out))
+                
+                _, _, f1 = f1_shift(ref_bp, pred_bp)
+                f1_postproc_rinalmo += f1
+
             f1_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="triangular")
             f1_shift_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="f1_shift")
         loss_acum /= len(loader)
         f1_acum /= len(loader)
         f1_shift_acum /= len(loader)
-        return {"loss": loss_acum, "f1": f1_acum, "f1_shift": f1_shift_acum}
+        f1_postproc_rinalmo /= loader.dataset.__len__() # por secuencia 
+
+        return {"loss": loss_acum, "f1": f1_acum, "f1_shift": f1_shift_acum, "f1_post_rinalmo": f1_postproc_rinalmo}
 
     def pred(self, loader):
         self.eval()
