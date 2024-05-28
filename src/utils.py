@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from constants import NT_DICT
+from src.constants import NT_DICT
 
 
 def outer_concat(t1: torch.Tensor, t2: torch.Tensor):

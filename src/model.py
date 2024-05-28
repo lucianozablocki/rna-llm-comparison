@@ -3,9 +3,9 @@ import torch
 from torch.nn.functional import cross_entropy
 from torch.optim.lr_scheduler import LinearLR
 import pandas as pd
-from metrics import contact_f1
-from utils import mat2bp, postprocessing, outer_concat
-
+from src.metrics import contact_f1
+from src.utils import mat2bp, postprocessing, outer_concat
+from tqdm import tqdm
 
 class ResNet2DBlock(nn.Module):
     def __init__(self, embed_dim, kernel_size=3, bias=False):
@@ -113,9 +113,10 @@ class SecStructPredictionHead(nn.Module):
         return x.squeeze(-1)
 
     def fit(self, loader):
+        self.train()
         loss_acum = 0
         f1_acum = 0
-        for batch in loader:
+        for batch in tqdm(loader):
             X = batch["seq_embs_pad"].to(self.device)
             y = batch["contacts"].to(self.device)
             y_pred = self(X)
@@ -133,52 +134,42 @@ class SecStructPredictionHead(nn.Module):
         return {"loss": loss_acum, "f1": f1_acum}
 
     def test(self, loader):
+        self.eval()
         loss_acum = 0
-        f1_acum = 0
+        f1_acum, f1_shift_acum = 0, 0
         for batch in loader:
             X = batch["seq_embs_pad"].to(self.device)
             y = batch["contacts"].to(self.device)
-            y_pred = self(X)
-            loss = self.loss_func(y_pred, y)
+            with torch.no_grad():
+                y_pred = self(X)
+                loss = self.loss_func(y_pred, y)
             loss_acum += loss.item()
             f1_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="triangular")
+            f1_shift_acum += contact_f1(y.cpu(), y_pred.detach().cpu(), batch["Ls"], method="f1_shift")
         loss_acum /= len(loader)
         f1_acum /= len(loader)
-        return {"loss": loss_acum, "f1": f1_acum}
+        f1_shift_acum /= len(loader)
+        return {"loss": loss_acum, "f1": f1_acum, "f1_shift": f1_shift_acum}
 
     def pred(self, loader):
-        # self.eval()
-
-        # if self.verbose:
-        #     loader = tqdm(loader)
+        self.eval()
 
         predictions = [] 
-        # with tr.no_grad():
         for batch in loader: 
             
             Ls = batch["Ls"]
             seq_ids = batch["seq_ids"]
             sequences = batch["sequences"]
             X = batch["seq_embs_pad"].to(self.device)
-
-            y_pred = self(X)
+            with torch.no_grad():
+                y_pred = self(X)
             
-            # if isinstance(y_pred, tuple):
-            #     y_pred = y_pred[0]
-
-            y_pred_post = postprocessing(y_pred.cpu(), batch["masks"])
-            for k in range(len(y_pred_post)):
-                # if logits:
-                #     logits_list.append(
-                #         (seqid[k],
-                #             y_pred[k, : lengths[k], : lengths[k]].squeeze().cpu(),
-                #             y_pred_post[k, : lengths[k], : lengths[k]].squeeze()
-                #         ))
+            for k in range(len(y_pred)):
                 predictions.append((
                     seq_ids[k],
                     sequences[k],
                     mat2bp(
-                        y_pred_post[k, : Ls[k], : Ls[k]].squeeze()
+                        y_pred[k, : Ls[k], : Ls[k]].squeeze().cpu()
                     )                         
                 ))
         predictions = pd.DataFrame(predictions, columns=["id", "sequence", "base_pairs"])
