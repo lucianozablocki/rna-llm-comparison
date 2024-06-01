@@ -43,6 +43,9 @@ def _clean_sec_struct(sec_struct: np.array, probs: np.array):
     return clean_sec_struct
 
 def prob_mat_to_sec_struct(probs: np.array, seq: str, threshold: float = 0.5, allow_nc_pairs: bool = False, allow_sharp_loops: bool = False):
+    """
+    Extracted from https://github.com/lbcb-sci/RiNALMo/blob/da6572dc22617f95f7c657e79b2ea126dc7cf979/rinalmo/utils/sec_struct.py#L148
+    """
     assert np.all(np.isclose(probs, np.transpose(probs))), "Probability matrix must be symmetric!"
     seq_len = probs.shape[-1]
 
