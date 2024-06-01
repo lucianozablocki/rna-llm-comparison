@@ -1,0 +1,7 @@
+data/*
+results_*
+__pycache__
+
+!data/all_repr_archiveii_RiNALMo.txt
+!data/all_repr_ERNIE-RNA.txt
+!data/ArchiveII.csv
