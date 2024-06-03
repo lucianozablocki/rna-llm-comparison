@@ -30,5 +30,5 @@ This will create the partitions under `data/archiveII_famfold`.
 The `ss-model.py` script contains a few command line parameters, an example to run the train for 15 epochs using RiNALMo-generated representations, with tmRNA family as held out test partition set is:
 
 ```
-python ss-model.py --train_partition_path data/archiveII_famfold/tmRNA/train.csv --out_path <directory_where_to_write_results>
+python ss-model.py --train_partition_path data/archiveII_famfold/tmRNA/train.csv --test_partition_path data/archiveII_famfold/tmRNA/test.csv --out_path <directory_where_to_write_results>
 ```
