@@ -6,4 +6,14 @@ Nothing to install here :)
 
 ## ERNIE-RNA
 
+```
+git clone https://github.com/Bruce-ywj/ERNIE-RNA.git
+cd ./ERNIE-RNA
+conda env create -f environment.yml
+conda activate ERNIE-RNA
+conda install pandas
+conda install h5py
+python gen_seq_embedding.py
+```
+
 ## Rinalmo
