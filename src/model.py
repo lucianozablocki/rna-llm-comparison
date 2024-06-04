@@ -58,7 +58,7 @@ class SecStructPredictionHead(nn.Module):
         super().__init__()
         self.lr = lr
         self.threshold = 0.1
-        self.linear_in = nn.Linear(embed_dim, conv_dim/2)
+        self.linear_in = nn.Linear(embed_dim, (int) (conv_dim/2))
         self.resnet = ResNet2D(conv_dim, num_blocks, kernel_size)
         self.conv_out = nn.Conv2d(conv_dim, 1, kernel_size=kernel_size, padding="same")
         self.device = device
