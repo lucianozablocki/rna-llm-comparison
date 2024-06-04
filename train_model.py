@@ -65,6 +65,10 @@ for epoch in range(args.max_epochs):
     for k in test_metrics:
         logger.info(f"test_{k} {test_metrics[k]:.3f}")
 
+torch.save(
+    net.state_dict(),
+    os.path.join(args.out_path, f"weights.pmt")
+)
 predictions = net.pred(test_loader)
 predictions.to_csv(os.path.join(args.out_path, f"preds.csv"), index=False)
 logger.info(f"finished run!")

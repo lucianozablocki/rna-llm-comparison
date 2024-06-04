@@ -89,7 +89,7 @@ dependencies:
   - numpy-base=1.26.4=py311hf175353_0
   - openh264=2.1.1=h4ff587b_0
   - openjpeg=2.4.0=h3ad879b_0
-  - openssl=3.0.13=h7f8727e_1
+  - openssl=3.0.13=h7f8727e_2
   - pandas=2.2.1=py311ha02d727_0
   - pillow=10.3.0=py311h5eee18b_0
   - pip=23.3.1=py311h06a4308_0
@@ -116,6 +116,7 @@ dependencies:
   - torchaudio=2.3.0=py311_cu118
   - torchtriton=2.3.0=py311
   - torchvision=0.18.0=py311_cu118
+  - tqdm=4.66.4=py311h92b7b1e_0
   - typing_extensions=4.9.0=py311h06a4308_1
   - tzdata=2024a=h04d1e81_0
   - urllib3=2.1.0=py311h06a4308_0
