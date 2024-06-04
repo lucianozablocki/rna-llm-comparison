@@ -13,7 +13,7 @@ conda env create -f environment.yml
 conda activate ERNIE-RNA
 conda install pandas
 conda install h5py
-python gen_seq_embedding.py
+python ernie_gen_seq_embedding.py
 ```
 
 ## Rinalmo
