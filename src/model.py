@@ -49,11 +49,16 @@ class ResNet2D(nn.Module):
         return x
 
 class SecStructPredictionHead(nn.Module):
-    def __init__(self, embed_dim, num_blocks=2, conv_dim=64, kernel_size=3, negative_weight=0.1, device='cpu', lr=1e-5):
+    def __init__(
+        self, embed_dim, num_blocks=2,
+        conv_dim=64, kernel_size=3,
+        negative_weight=0.1,
+        device='cpu', lr=1e-5
+    ):
         super().__init__()
         self.lr = lr
         self.threshold = 0.1
-        self.linear_in = nn.Linear(embed_dim * 2, conv_dim)
+        self.linear_in = nn.Linear(embed_dim, (int) (conv_dim/2))
         self.resnet = ResNet2D(conv_dim, num_blocks, kernel_size)
         self.conv_out = nn.Conv2d(conv_dim, 1, kernel_size=kernel_size, padding="same")
         self.device = device
@@ -77,10 +82,10 @@ class SecStructPredictionHead(nn.Module):
         return loss
 
     def forward(self, x):
-        x = outer_concat(x, x) # B x L x F => B x L x L x 2F
+        x = self.linear_in(x) # B x L x E => B x L x M/2
 
-        x = self.linear_in(x)
-        x = x.permute(0, 3, 1, 2) # B x L x L x E  => B x E x L x L
+        x = outer_concat(x, x) # B x L x M/2 => B x L x L x M
+        x = x.permute(0, 3, 1, 2) # B x L x L x M  => B x M x L x L
 
         x = self.resnet(x)
         x = self.conv_out(x)
