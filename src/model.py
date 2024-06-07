@@ -57,8 +57,8 @@ class SecStructPredictionHead(nn.Module):
     ):
         super().__init__()
         self.lr = lr
-        self.threshold = 0.1
-        self.linear_in = nn.Linear(embed_dim, (int) (conv_dim/2))
+        self.rinalmo_threshold = 0.1 # user to report f1 shift using RiNALMo's postprocessing
+        self.linear_in = nn.Linear(embed_dim * 2, conv_dim)
         self.resnet = ResNet2D(conv_dim, num_blocks, kernel_size)
         self.conv_out = nn.Conv2d(conv_dim, 1, kernel_size=kernel_size, padding="same")
         self.device = device
@@ -82,10 +82,10 @@ class SecStructPredictionHead(nn.Module):
         return loss
 
     def forward(self, x):
-        x = self.linear_in(x) # B x L x E => B x L x M/2
+        x = outer_concat(x, x) # B x L x F => B x L x L x 2F        x = self.linear_in(x) # B x L x E => B x L x M/2
 
-        x = outer_concat(x, x) # B x L x M/2 => B x L x L x M
-        x = x.permute(0, 3, 1, 2) # B x L x L x M  => B x M x L x L
+        x = self.linear_in(x)
+        x = x.permute(0, 3, 1, 2) # B x L x L x E  => B x E x L x L
 
         x = self.resnet(x)
         x = self.conv_out(x)
@@ -132,7 +132,7 @@ class SecStructPredictionHead(nn.Module):
 
             for i in range(y_pred.shape[0]):
                 L = batch["Ls"][i]
-                out = prob_mat_to_sec_struct(probs=y_pred[i,:L,:L].cpu().numpy(), seq=batch["sequences"][i], threshold=self.threshold)
+                out = prob_mat_to_sec_struct(probs=y_pred[i,:L,:L].cpu().numpy(), seq=batch["sequences"][i], threshold=self.rinalmo_threshold)
                 ref_bp = mat2bp(y[i, :L, :L].cpu())
                 pred_bp = mat2bp(torch.tensor(out))
                 
