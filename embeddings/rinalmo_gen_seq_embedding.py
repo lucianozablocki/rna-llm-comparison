@@ -26,7 +26,7 @@ print("tokenizing")
 tokens = torch.tensor(alphabet.batch_tokenize(data["sequence"].tolist()), dtype=torch.int64, device=args.device)
 
 print("generating repr")
-# as passing computing the representations for all the dataset at once
+# as computing representations for all the dataset at once
 # produced a CUDAOutOfMemoryError, we make it by batches
 total_seqs = len(data)
 total_iterations = math.floor(total_seqs/args.batch_size)
