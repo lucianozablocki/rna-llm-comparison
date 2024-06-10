@@ -2,6 +2,7 @@ import argparse
 import torch
 import logging
 import os
+import pandas as pd
 
 from src.model import SecStructPredictionHead
 from src.dataset import create_dataloader
@@ -49,6 +50,10 @@ test_loader = create_dataloader(
 embed_dim = get_embed_dim(train_loader)
 net = SecStructPredictionHead(embed_dim=embed_dim, device=args.device, lr=args.lr)
 
+res = [] # TODO ver si unificamos con el logger
+logger.info(f"Run on {args.out_path}, with device {args.device} and embeddings {args.embeddings_path}")
+logger.info(f"Training on {args.train_partition_path} and testing on {args.test_partition_path}")
+
 for epoch in range(args.max_epochs):
     logger.info(f"starting epoch {epoch}")
     train_metrics = net.fit(train_loader)
@@ -59,11 +64,18 @@ for epoch in range(args.max_epochs):
     )
     logger.info(msg)
 
-    # TODO esto va fuera del loop de epochs
+    # TODO esto va fuera del loop de epochs en la versión final, aca lo dejamos de debugging
     logger.info("running inference")
     test_metrics = net.test(test_loader)
     for k in test_metrics:
         logger.info(f"test_{k} {test_metrics[k]:.3f}")
+    test_metrics = {f"test_{k}": v for k, v in test_metrics.items()}
+    train_metrics = {f"train_{k}": v for k, v in train_metrics.items()}
+    train_metrics.update(test_metrics)
+    res.append(train_metrics)    
+
+pd.set_option('display.float_format','{:.3f}'.format)
+pd.DataFrame(res).to_csv(os.path.join(args.out_path, f"metrics.csv"), index=False)
 
 torch.save(
     net.state_dict(),
