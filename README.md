@@ -5,6 +5,11 @@ repository that holds the code to build a secondary structure RNA predictor mode
 
 ## Prerequisites
 
+```
+git clone https://github.com/lucianozablocki/rna-llm-comparison
+cd rna-llm-comparison/
+```
+
 With an Anaconda working installation, run:
 
 ```
@@ -12,6 +17,10 @@ conda env create -f environment.yml
 ```
 
 This should install all required dependencies.
+
+```
+conda activate rna-llm
+```
 
 You will also need to download representations, check the links in [Embeddings section](README.md#embeddings)
 
