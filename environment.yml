@@ -1,4 +1,4 @@
-name: comparison3.11
+name: rna-llm
 channels:
   - pytorch
   - nvidia
