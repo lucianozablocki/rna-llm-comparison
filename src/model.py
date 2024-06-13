@@ -82,14 +82,14 @@ class SecStructPredictionHead(nn.Module):
         return loss
 
     def forward(self, x):
-        x = self.linear_in(x) # B x L x E => B x L x M/2
+        x = self.linear_in(x) 
 
-        x = outer_concat(x, x) # B x L x M/2 => B x L x L x M
-        x = x.permute(0, 3, 1, 2) # B x L x L x M  => B x M x L x L
+        x = outer_concat(x, x) 
+        x = x.permute(0, 3, 1, 2) 
 
         x = self.resnet(x)
         x = self.conv_out(x)
-        x = x.squeeze(-3) # B x 1 x L x L => B x L x L
+        x = x.squeeze(-3) 
 
         # Symmetrize the output
         x = torch.triu(x, diagonal=1)
