@@ -29,6 +29,7 @@ for seq_id, seq in zip(seq_ids, seqs):
     pretrained_model_path='./checkpoint/ERNIE-RNA_checkpoint/ERNIE-RNA_pretrain.pt',
     device=args.device,
   )
+  print(seq_id)
   # embedding has size 1 x 12 x L x d, so take the output of the last transformer layer
   # and then squeeze it before trimming CLS and END tokens
   id_to_embedding[seq_id] = np.squeeze(embedding[:,11,:,:])[1:-1]
