@@ -58,7 +58,4 @@ python run_bprna.py
 
 
 ## Embeddings
-ERNIE-RNA (TODO: hacer carpetas publicas para esto)
-https://drive.google.com/file/d/1eKL5hsc0vXDr4GUGV2dlAb6t6PhQ5qD1/view?usp=sharing
-RINALMO
-https://drive.google.com/file/d/1lBZDnPPcGMymkck6amwCWTDMYqD8EhHA/view?usp=sharing
+You'll find the embeddings in https://drive.google.com/drive/folders/1Z-Ht6Jk45xKNn8Samy_I6O7X705SCafO?usp=sharing. 

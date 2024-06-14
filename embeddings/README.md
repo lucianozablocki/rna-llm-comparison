@@ -8,12 +8,17 @@ Nothing to install here :)
 
 ```
 git clone https://github.com/Bruce-ywj/ERNIE-RNA.git
+```
+
+Download pretrained weights from https://drive.google.com/drive/folders/1iX-xtrTtT-zk5je8hCdYQOQHDWbl1wgo and put them under `ERNIE-RNA/checkpoint/ERNIE-RNA_checkpoint`.
+
+```
 cd ./ERNIE-RNA
 conda env create -f environment.yml
 conda activate ERNIE-RNA
 conda install pandas
 conda install h5py
-python ernierna_gen_seq_embedding.py
+python ernie-rna.py
 ```
 
 ## RiNALMo
@@ -27,5 +32,5 @@ pip install .
 FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE pip install flash-attn --no-build-isolation
 conda install pandas
 conda install h5py
-python rinalmo_gen_seq_embedding.py
+python rinalmo.py
 ```
