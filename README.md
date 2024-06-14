@@ -47,13 +47,13 @@ python train_model.py --train_partition_path data/archiveII_famfold/tmRNA/train.
 ArchiveII fam-fold
 
 ```
-python run_famfold.py
+python scripts/run_famfold.py
 ```
 
 bpRNA TR0/TS0
 
 ```
-python run_bprna.py
+python scripts/run_bprna.py
 ```
 
 
