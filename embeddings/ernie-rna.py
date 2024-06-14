@@ -2,38 +2,45 @@ import argparse
 import pandas as pd
 import extract_embedding # ERNIE-RNA
 import h5py
+import numpy as np
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--seqs_path", default='./data/ArchiveII.csv', type=str, help="The path of input RNA sequences.")
 parser.add_argument("--device", default='cuda:0', type=str, help="Device to execute (either cpu or cuda).")
 parser.add_argument("--output_path", default='./data', type=str, help="Folder to save embeddings file.")
-parser.add_argument("--arg_overrides", default={ "data": './src/dict/' }, help="The path of vocabulary")
-parser.add_argument("--ernie_rna_pretrained_checkpoint", default='./checkpoint/ERNIE-RNA_checkpoint/ERNIE-RNA_pretrain.pt', type=str, help="The path of ERNIE-RNA checkpoint")
 
 args = parser.parse_args()
 
+print("Reading CSV")
 data = pd.read_csv(args.seqs_path)
 
-# we rely on the extract_embedding module of ERNIE-RNA to be available. we have to look for another way of invoking it
-all_embeddings = extract_embedding.extract_embedding_of_ernierna(
-   data["sequence"].tolist(),
-   if_cls=False,
-   arg_overrides=args.arg_overrides,
-   pretrained_model_path=args.ernie_rna_pretrained_checkpoint,
-   device=args.device
-)
-
+seqs = data["sequence"].tolist()
+seq_ids = data["id"].tolist()
 id_to_embedding = {}
-# generate dictionary with seq ids as keys, and embedding tensors as values
-for seq_id, embedding in zip(data['id'], all_embeddings):
-  id_to_embedding[seq_id] = embedding
-# an alternative way of converting it to a h5py file is to convert it to a pandas dataframe first
-# pandas.from_dict() # orient='columns'
 
-# h5, parquet, pickle, npy are possible file formats to store the representations
-# we choose h5 here
-with h5py.File(f'{args.output_path}/all_repr_ERNIE-RNA.h5', 'w') as hdf:
+print("Generating embeddings...")
+for seq_id, seq in zip(seq_ids, seqs):
+  # we rely on the extract_embedding module of ERNIE-RNA to be available. we have to look for another way of invoking it
+  embedding = extract_embedding.extract_embedding_of_ernierna(
+    [seq],
+    if_cls=False,
+    arg_overrides={ "data": './src/dict/' },
+    pretrained_model_path='./checkpoint/ERNIE-RNA_checkpoint/ERNIE-RNA_pretrain.pt',
+    device=args.device,
+  )
+  print(seq_id)
+  # embedding has size 1 x 12 x L x d, so take the output of the last transformer layer
+  # and then squeeze it before trimming CLS and END tokens
+  id_to_embedding[seq_id] = np.squeeze(embedding[:,11,:,:])[1:-1]
+  # an alternative way of converting it to a h5py file is to convert it to a pandas dataframe first
+  # pandas.from_dict() # orient='columns'
+
+print(f"total number of sequences: {len(id_to_embedding)}")
+
+# save in h5 format
+print("Saving embeddings...")
+with h5py.File(f'{args.output_path}/ERNIE-RNA_ArchiveII.h5', 'w') as hdf:
   for key, value in id_to_embedding.items():
     hdf.create_dataset(key, data=value)
 
