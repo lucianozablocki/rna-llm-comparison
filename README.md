@@ -36,13 +36,15 @@ This will create the partitions under `data/archiveII_famfold`.
 
 ## Train/test scripts
 
-ArchiveII fam-fold
+Save the embeddings in the data directory (for example `data/rnafm_ArchiveII.h5 format`). Then edit the `scripts/run_famfold.py` to specify the embedding name (for example `emb_name = "rnafm"`).
+
+ArchiveII fam-fold train and test:
 
 ```
 python scripts/run_famfold.py
 ```
 
-bpRNA TR0/TS0
+bpRNA TR0/TS0 train and test:
 
 ```
 python scripts/run_bprna.py
