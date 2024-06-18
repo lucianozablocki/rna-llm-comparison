@@ -3,19 +3,18 @@ import os
 import shutil 
 
 # Params
-dataset_name = "ArchiveII"
 emb_name = "one-hot"
 
-df = pd.read_csv(f'data/{dataset_name}.csv')
+df = pd.read_csv(f'data/ArchiveII.csv')
 device = "cuda:0"
-emb_path = f"data/{emb_name}_{dataset_name}.h5"
+emb_path = f"data/{emb_name}_ArchiveII.h5"
 df["fam"] = df["id"].str.split("_").str[0]
 
 for fam in df["fam"].unique():
     train = df[df["fam"] != fam]
     test = df[df["fam"] == fam]
     data_path = f"data/archiveII_famfold/{fam}/"
-    out_path = f"results_{emb_name}_{dataset_name}_famfold/{fam}/"
+    out_path = f"results_{emb_name}_ArchiveII_famfold/{fam}/"
     os.makedirs(data_path, exist_ok=True)
     shutil.rmtree(out_path, ignore_errors=True)
     os.makedirs(out_path, exist_ok=True)
