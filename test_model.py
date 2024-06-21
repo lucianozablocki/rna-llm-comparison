@@ -25,7 +25,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s.%(lineno)d - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),  # Log to console
-        logging.FileHandler(os.path.join(args.out_path, f'log.txt'), mode='w'),
+        logging.FileHandler(os.path.join(args.out_path, f'log-test.txt'), mode='w'),
     ]
 )
 logger = logging.getLogger(__name__)
