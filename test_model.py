@@ -17,6 +17,7 @@ parser.add_argument("--embeddings_path", default='data/all_repr_ERNIE-RNA.h5', t
 parser.add_argument("--test_partition_path", default='data/archiveII_famfold/grp1/test.csv', type=str, help="The path of the test partition.")
 parser.add_argument("--batch_size", default=2, type=int, help="Batch size to use in forward pass.")
 parser.add_argument("--out_path", default="./results", type=str, help="Path to read model from, and to write predictions/metrics/logs")
+parser.add_argument("--weights_path", type=str, help="Path to read model from, in cases it has to be read from a different place than `out_path`")
 
 args = parser.parse_args()
 
@@ -41,7 +42,7 @@ test_loader = create_dataloader(
 )
 embed_dim = get_embed_dim(test_loader)
 best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
-best_model.load_state_dict(torch.load(os.path.join(args.out_path, f"weights.pmt"), map_location=torch.device(best_model.device)))
+best_model.load_state_dict(torch.load(os.path.join(args.weights_path if args.weights_path else args.out_path, f"weights.pmt"), map_location=torch.device(best_model.device)))
 best_model.eval()
 
 logger.info("running inference")
