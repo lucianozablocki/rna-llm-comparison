@@ -21,12 +21,15 @@ parser.add_argument("--weights_path", type=str, help="Path to read model from, i
 
 args = parser.parse_args()
 
+# Create results file withe the name of input file
+out_name = os.path.splitext(os.path.split(args.test_partition_path)[-1])[0]
+
 logging.basicConfig(
     level=logging.DEBUG,  # Set the minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     format='%(asctime)s - %(name)s.%(lineno)d - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),  # Log to console
-        logging.FileHandler(os.path.join(args.out_path, f'log-test.txt'), mode='w'),
+        logging.FileHandler(os.path.join(args.out_path, f'log-{out_name}.txt'), mode='w'),
     ]
 )
 logger = logging.getLogger(__name__)
@@ -45,14 +48,17 @@ best_model = SecStructPredictionHead(embed_dim=embed_dim, device=args.device)
 best_model.load_state_dict(torch.load(os.path.join(args.weights_path if args.weights_path else args.out_path, f"weights.pmt"), map_location=torch.device(best_model.device)))
 best_model.eval()
 
+
 logger.info("running inference")
 metrics = best_model.test(test_loader)
 metrics = {f"test_{k}": v for k, v in metrics.items()}
 logger.info(" ".join([f"{k}: {v:.3f}" for k, v in metrics.items()]))
 
+out_file = os.path.join(args.out_path, f"metrics_{out_name}.csv")
 pd.set_option('display.float_format','{:.3f}'.format)
-pd.DataFrame([metrics]).to_csv(os.path.join(args.out_path, f"metrics_test.csv"), index=False)
+pd.DataFrame([metrics]).to_csv(out_file, index=False)
 
 logger.info("predicting")
+out_file = os.path.join(args.out_path, f"preds_{out_name}.csv")
 predictions = best_model.pred(test_loader)
-predictions.to_csv(os.path.join(args.out_path, f"preds.csv"), index=False)
+predictions.to_csv(out_file, index=False)
