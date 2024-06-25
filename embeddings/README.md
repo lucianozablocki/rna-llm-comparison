@@ -36,6 +36,14 @@ python rinalmo.py
 ```
 
 ## RNA-FM
+```
+git clone https://github.com/ml4bio/RNA-FM.git
+cd RNA-FM/
+conda env create -f environment.yml
+conda activate RNA-FM
+cd redevelop/
+pip install .
+```
 
 ## RNABERT
 ##
